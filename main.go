@@ -24,7 +24,7 @@ import (
 // ---------------------------------------------------------------------------
 // BERMUDA Stealth Gateway NG — Master Edge Entrypoint & Runtime Orchestrator
 // Dynamic cgroup v1/v2 Budgeting, 5-Stage Zero-Loss Drain, Go 1.24 Baseline
-// Automated Cloudflare Edge Tuning & 0-RTT Connection Resumption Engine
+// Automated Multi-CDN Edge Tuning Engine (Cloudflare, Gcore & Bunny.net)
 // Invariant: Zero External Dependencies, Kernel-Tuned TCP Sockets, Leak-Free
 // ---------------------------------------------------------------------------
 
@@ -42,8 +42,10 @@ const (
 	// Linux-specific TCP socket option (0x12)
 	tcpUserTimeoutOpt = 18
 
-	// Cloudflare Edge Optimization API Base
-	cfAPIBaseURL = "https://api.cloudflare.com/client/v4/zones"
+	// Edge Optimization API Bases
+	cfAPIBaseURL    = "https://api.cloudflare.com/client/v4/zones"
+	gcoreAPIBaseURL = "https://api.gcore.com/cdn/resources"
+	bunnyAPIBaseURL = "https://api.bunny.net/pullzone"
 )
 
 // cgroupMemoryLimit reads cgroup v2 memory.max, falling back to v1 memory.limit_in_bytes.
@@ -215,7 +217,6 @@ type cfAPIResponse struct {
 	} `json:"messages"`
 }
 
-// cfSettingItem defines an edge optimization parameter to be enforced on Cloudflare.
 type cfSettingItem struct {
 	name     string
 	endpoint string
@@ -223,7 +224,6 @@ type cfSettingItem struct {
 }
 
 // tuneCloudflareEdge enforces 0-RTT, WebSockets, Tiered Caching, and WAF mitigation on Cloudflare Edge.
-// Runs asynchronously in a background goroutine; completely non-blocking to runtime startup.
 func tuneCloudflareEdge(token, zoneID string) {
 	log.Printf("[Cloudflare] Initiating automated Edge Tuning for Zone %s...", zoneID)
 
@@ -293,7 +293,7 @@ func tuneCloudflareEdge(token, zoneID string) {
 
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "BERMUDA-Stealth-EdgeTuner/2.1 (Go-Standard-Library)")
+		req.Header.Set("User-Agent", "BERMUDA-Stealth-EdgeTuner/2.2 (Go-Standard-Library)")
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -333,6 +333,103 @@ func tuneCloudflareEdge(token, zoneID string) {
 		appliedCount, len(settings), zoneID)
 }
 
+// tuneGcoreEdge automatically configures Gcore CDN for WebSockets, Brotli, and cache bypass.
+func tuneGcoreEdge(token, resourceID string) {
+	log.Printf("[Gcore] Initiating automated Edge Tuning for Resource %s...", resourceID)
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	targetURL := fmt.Sprintf("%s/%s", gcoreAPIBaseURL, resourceID)
+
+	payload := map[string]any{
+		"options": map[string]any{
+			"websockets":             map[string]any{"enabled": true, "value": true},
+			"brotli_compression":     map[string]any{"enabled": true},
+			"edge_cache_settings":    map[string]any{"enabled": false, "value": "custom"},
+			"browser_cache_settings": map[string]any{"enabled": false, "value": "custom"},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[Gcore] Internal marshal error: %v", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, targetURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		log.Printf("[Gcore] Request build error: %v", err)
+		return
+	}
+
+	req.Header.Set("Authorization", "APIKey "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "BERMUDA-Stealth-EdgeTuner/2.2 (Go-Standard-Library)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[Gcore] Warning: Connection timeout/error configuring resource %s: %v", resourceID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		log.Printf("[Gcore] ✓ WebSockets, Brotli & Zero-Cache Bypass: ACTIVE on Resource %s (HTTP %d)", resourceID, resp.StatusCode)
+	} else {
+		respBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("[Gcore] Note: Edge tuning returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+	}
+}
+
+// tuneBunnyEdge automatically configures Bunny.net PullZone for WebSockets and cache bypass.
+func tuneBunnyEdge(token, pullZoneID string) {
+	log.Printf("[Bunny] Initiating automated Edge Tuning for PullZone %s...", pullZoneID)
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	targetURL := fmt.Sprintf("%s/%s", bunnyAPIBaseURL, pullZoneID)
+
+	payload := map[string]any{
+		"EnableWebSocket":            true,
+		"DisableCookies":             true,
+		"CacheControlMaxAgeOverride": 0,
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[Bunny] Internal marshal error: %v", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		log.Printf("[Bunny] Request build error: %v", err)
+		return
+	}
+
+	req.Header.Set("AccessKey", token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "BERMUDA-Stealth-EdgeTuner/2.2 (Go-Standard-Library)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[Bunny] Warning: Connection timeout/error configuring PullZone %s: %v", pullZoneID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		log.Printf("[Bunny] ✓ Persistent WebSockets & Line-Rate Cache Bypass: ACTIVE on PullZone %s (HTTP %d)", pullZoneID, resp.StatusCode)
+	} else {
+		respBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("[Bunny] Note: Edge tuning returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+	}
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	log.Println("[Gateway] Initializing BERMUDA Stealth Gateway NG...")
@@ -359,7 +456,7 @@ func main() {
 	// 3. Instantiate reverse proxy edge engine
 	gw := NewGateway(sup)
 
-	// 4. Automated Cloudflare Edge Tuning & 0-RTT Connection Resumption Engine
+	// 4. Automated Multi-CDN Edge Tuning Engines (Cloudflare, Gcore, Bunny.net)
 	// Dispatched asynchronously in background: guarantees zero delay during Railway PaaS cold boots.
 	cfToken := strings.TrimSpace(getEnv("CLOUDFLARE_API_TOKEN", os.Getenv("BERMUDA_CF_API_TOKEN")))
 	cfZoneID := strings.TrimSpace(getEnv("CLOUDFLARE_ZONE_ID", os.Getenv("BERMUDA_CF_ZONE_ID")))
@@ -367,6 +464,22 @@ func main() {
 		go tuneCloudflareEdge(cfToken, cfZoneID)
 	} else {
 		log.Println("[Cloudflare] Notice: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ZONE_ID unset. Edge auto-tuning bypassed.")
+	}
+
+	gcoreKey := strings.TrimSpace(getEnv("GCORE_API_KEY", os.Getenv("BERMUDA_GCORE_API_KEY")))
+	gcoreResID := strings.TrimSpace(getEnv("GCORE_RESOURCE_ID", os.Getenv("BERMUDA_GCORE_RESOURCE_ID")))
+	if gcoreKey != "" && gcoreResID != "" {
+		go tuneGcoreEdge(gcoreKey, gcoreResID)
+	} else {
+		log.Println("[Gcore] Notice: GCORE_API_KEY or GCORE_RESOURCE_ID unset. Gcore auto-tuning bypassed.")
+	}
+
+	bunnyKey := strings.TrimSpace(getEnv("BUNNY_API_KEY", os.Getenv("BERMUDA_BUNNY_API_KEY")))
+	bunnyPullID := strings.TrimSpace(getEnv("BUNNY_PULLZONE_ID", os.Getenv("BERMUDA_BUNNY_PULLZONE_ID")))
+	if bunnyKey != "" && bunnyPullID != "" {
+		go tuneBunnyEdge(bunnyKey, bunnyPullID)
+	} else {
+		log.Println("[Bunny] Notice: BUNNY_API_KEY or BUNNY_PULLZONE_ID unset. Bunny auto-tuning bypassed.")
 	}
 
 	// 5. Decoupled Context Architecture:
