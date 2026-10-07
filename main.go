@@ -332,7 +332,7 @@ func tuneCloudflareEdge(token, zoneID string) {
 		appliedCount, len(settings), zoneID)
 }
 
-// tuneGcoreEdge automatically configures Gcore CDN for WebSockets, Brotli, and cache bypass.
+// tuneGcoreEdge automatically configures Gcore CDN for WebSockets and cache bypass.
 func tuneGcoreEdge(token, resourceID string) {
 	log.Printf("[Gcore] Initiating automated Edge Tuning for Resource %s...", resourceID)
 
@@ -342,7 +342,6 @@ func tuneGcoreEdge(token, resourceID string) {
 	payload := map[string]any{
 		"options": map[string]any{
 			"websockets":             map[string]any{"enabled": true, "value": true},
-			"brotli_compression":     map[string]any{"enabled": true, "value": true},
 			"edge_cache_settings":    map[string]any{"enabled": false, "value": "0s"},
 			"browser_cache_settings": map[string]any{"enabled": false, "value": "0s"},
 		},
@@ -375,7 +374,7 @@ func tuneGcoreEdge(token, resourceID string) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		log.Printf("[Gcore] ✓ WebSockets, Brotli & Zero-Cache Bypass: ACTIVE on Resource %s (HTTP %d)", resourceID, resp.StatusCode)
+		log.Printf("[Gcore] ✓ WebSockets & Zero-Cache Bypass: ACTIVE on Resource %s (HTTP %d)", resourceID, resp.StatusCode)
 	} else {
 		respBytes, _ := io.ReadAll(resp.Body)
 		log.Printf("[Gcore] Note: Edge tuning returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
