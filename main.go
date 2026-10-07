@@ -332,18 +332,18 @@ func tuneCloudflareEdge(token, zoneID string) {
 		appliedCount, len(settings), zoneID)
 }
 
-// tuneGcoreEdge automatically configures Gcore CDN for WebSockets and cache bypass.
+// tuneGcoreEdge automatically configures Gcore CDN for WebSockets and cache bypass based on official Gcore REST schema.
 func tuneGcoreEdge(token, resourceID string) {
 	log.Printf("[Gcore] Initiating automated Edge Tuning for Resource %s...", resourceID)
 
 	client := &http.Client{Timeout: 12 * time.Second}
 	targetURL := fmt.Sprintf("%s/%s", gcoreAPIBaseURL, resourceID)
 
+	// Clean official Gcore API payload: strictly forces WebSockets and disables edge caching
 	payload := map[string]any{
 		"options": map[string]any{
-			"websockets":             map[string]any{"enabled": true, "value": true},
-			"edge_cache_settings":    map[string]any{"enabled": false, "value": "0s"},
-			"browser_cache_settings": map[string]any{"enabled": false, "value": "0s"},
+			"websockets":    map[string]any{"enabled": true, "value": true},
+			"disable_cache": map[string]any{"enabled": true, "value": true},
 		},
 	}
 
